@@ -1,1 +1,275 @@
 
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Système de Vente</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: auto; padding: 20px; }
+        h1 { text-align: center; }
+        form { margin-bottom: 20px; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 10px; margin: 5px 0; }
+        button { padding: 10px; background-color: #28a745; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #218838; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 10px; border: 1px solid #ccc; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .total { font-weight: bold; margin-top: 10px; }
+        .editable { border: 1px solid #007bff; padding: 5px; cursor: text; }
+        #summary { margin-top: 20px; }
+        #summary p { margin: 5px 0; }
+    </style>
+    <!-- Inclure la bibliothèque SheetJS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+    <h1>Système de Vente</h1>
+    <form id="sale-form">
+        <input type="text" id="product-name" placeholder="Nom du produit" required>
+        <input type="number" id="product-price" placeholder="Prix du produit" required>
+        <button type="submit">Ajouter Produit</button>
+    </form>
+    
+    <h2>Produits Vendus</h2>
+    <table id="item-table">
+        <thead>
+            <tr>
+                <th>Sélectionner</th>
+                <th>Nom du Produit</th>
+                <th>Prix (Ar)</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody id="item-list"></tbody>
+    </table>
+    
+    <div class="total" id="total-display">Total : Ar0.00</div>
+    <div class="total" id="daily-total-display">Total Vendu Aujourd'hui : Ar0.00</div>
+    <button id="export-button">Exporter en Excel</button>
+    <button id="delete-button">Supprimer les éléments sélectionnés</button>
+
+    <h2>Récapitulatif</h2>
+    <div id="summary">
+        <p id="summary-dates"></p>
+        <p id="summary-most-sold"></p>
+        <p id="summary-most-expensive"></p>
+    </div>
+</div>
+
+<script>
+    const saleForm = document.getElementById('sale-form');
+    const itemList = document.getElementById('item-list');
+    const totalDisplay = document.getElementById('total-display');
+    const dailyTotalDisplay = document.getElementById('daily-total-display');
+    const exportButton = document.getElementById('export-button');
+    const deleteButton = document.getElementById('delete-button');
+    const summaryDates = document.getElementById('summary-dates');
+    const summaryMostSold = document.getElementById('summary-most-sold');
+    const summaryMostExpensive = document.getElementById('summary-most-expensive');
+
+    // Charger les produits vendus depuis localStorage
+    function loadSoldItems() {
+        const soldItems = JSON.parse(localStorage.getItem('soldItems')) || [];
+        let total = 0;
+        let dailyTotal = 0;
+        const today = new Date().toISOString().split('T')[0]; // Obtenir la date au format YYYY-MM-DD
+
+        soldItems.forEach(item => {
+            addItemToList(item.name, item.price, item.date);
+            total += parseFloat(item.price); // Calculer le total
+            if (item.date === today) {
+                dailyTotal += parseFloat(item.price); // Calculer le total d'aujourd'hui
+            }
+        });
+
+        updateTotalDisplay(total);
+        updateDailyTotalDisplay(dailyTotal);
+        updateSummary(soldItems);
+    }
+
+    // Ajouter un produit à la liste
+    function addItemToList(name, price, date) {
+        const row = document.createElement('tr');
+        
+        // Créer une cellule pour la case à cocher
+        const selectCell = document.createElement('td');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        selectCell.appendChild(checkbox);
+
+        // Créer une cellule pour le nom du produit
+        const nameCell = document.createElement('td');
+        nameCell.textContent = name;
+        nameCell.classList.add('editable');
+        nameCell.onclick = function() {
+            const newName = prompt("Modifier le nom du produit:", name);
+            if (newName !== null) {
+                nameCell.textContent = newName;
+                updateLocalStorage();
+            }
+        };
+        
+        // Créer une cellule pour le prix
+        const priceCell = document.createElement('td');
+        priceCell.textContent = `Ar${price}`;
+        
+        // Créer une cellule pour la date
+        const dateCell = document.createElement('td');
+        dateCell.textContent = date;
+        dateCell.classList.add('editable');
+        dateCell.onclick = function() {
+            const newDate = prompt("Modifier la date (YYYY-MM-DD):", date);
+            if (newDate !== null) {
+                dateCell.textContent = newDate;
+                updateLocalStorage();
+            }
+        };
+
+        row.appendChild(selectCell);
+        row.appendChild(nameCell);
+        row.appendChild(priceCell);
+        row.appendChild(dateCell);
+        itemList.appendChild(row);
+    }
+
+    // Gérer l'envoi du formulaire
+    saleForm.addEventListener('submit', function(event) {
+        event.preventDefault();
+        const productName = document.getElementById('product-name').value;
+        const productPrice = parseFloat(document.getElementById('product-price').value);
+        const today = new Date().toISOString().split('T')[0]; // Date d'aujourd'hui
+
+        // Sauvegarder le produit dans localStorage
+        const soldItems = JSON.parse(localStorage.getItem('soldItems')) || [];
+        soldItems.push({ name: productName, price: productPrice, date: today }); // Inclure la date
+        localStorage.setItem('soldItems', JSON.stringify(soldItems));
+
+        // Ajouter le produit à la liste affichée
+        addItemToList(productName, productPrice, today);
+        
+        // Mettre à jour le total
+        updateTotalDisplay(productPrice);
+        updateDailyTotalDisplay(productPrice);
+
+        // Mettre à jour le récapitulatif
+        updateSummary(soldItems);
+
+        // Réinitialiser le formulaire
+        saleForm.reset();
+    });
+
+    // Mettre à jour l'affichage du total
+    function updateTotalDisplay(price) {
+        const currentTotal = parseFloat(totalDisplay.textContent.replace('Total : Ar', '')) || 0;
+        const newTotal = currentTotal + price;
+        totalDisplay.textContent = `Total : Ar${newTotal.toFixed(2)}`;
+    }
+
+    // Mettre à jour l'affichage du total d'aujourd'hui
+    function updateDailyTotalDisplay(price) {
+        const currentDailyTotal = parseFloat(dailyTotalDisplay.textContent.replace('Total Vendu Aujourd\'hui : Ar', '')) || 0;
+        const newDailyTotal = currentDailyTotal + price;
+        dailyTotalDisplay.textContent = `Total Vendu Aujourd'hui : Ar${newDailyTotal.toFixed(2)}`;
+    }
+
+    // Mettre à jour le localStorage avec les nouvelles valeurs
+    function updateLocalStorage() {
+        const soldItems = [];
+        const rows = itemList.querySelectorAll('tr');
+        
+        rows.forEach(row => {
+            const name = row.cells[1].textContent;
+            const price = parseFloat(row.cells[2].textContent.replace('Ar', ''));
+            const date = row.cells[3].textContent;
+            soldItems.push({ name, price, date });
+        });
+
+        localStorage.setItem('soldItems', JSON.stringify(soldItems));
+        updateSummary(soldItems);
+    }
+
+    // Fonction d'exportation en Excel
+    exportButton.addEventListener('click', function() {
+        const wb = XLSX.utils.book_new(); // Créer un nouveau classeur
+        const ws = XLSX.utils.table_to_sheet(document.getElementById('item-table')); // Convertir le tableau en feuille de calcul
+        XLSX.utils.book_append_sheet(wb, ws, 'Produits Vendus'); // Ajouter la feuille de calcul au classeur
+        XLSX.writeFile(wb, 'produits_vendus.xlsx'); // Télécharger le fichier Excel
+    });
+
+    // Fonction de suppression des éléments sélectionnés
+    deleteButton.addEventListener('click', function() {
+        const rows = itemList.querySelectorAll('tr');
+        let total = 0;
+        let dailyTotal = 0;
+        const today = new Date().toISOString().split('T')[0];
+
+        rows.forEach(row => {
+            const checkbox = row.cells[0].querySelector('input[type="checkbox"]');
+            if (checkbox.checked) {
+                row.remove();
+            } else {
+                const price = parseFloat(row.cells[2].textContent.replace('Ar', ''));
+                const date = row.cells[3].textContent;
+                total += price;
+                if (date === today) {
+                    dailyTotal += price;
+                }
+            }
+        });
+
+        updateTotalDisplay(total - parseFloat(totalDisplay.textContent.replace('Total : Ar', '')));
+        updateDailyTotalDisplay(dailyTotal - parseFloat(dailyTotalDisplay.textContent.replace('Total Vendu Aujourd\'hui : Ar', '')));
+        updateLocalStorage();
+    });
+
+    // Fonction pour mettre à jour le résumé
+    function updateSummary(soldItems) {
+        const dateMap = {};
+        const productCount = {};
+        let mostSoldProduct = "";
+        let mostSoldCount = 0;
+        let mostExpensiveProduct = "";
+        let highestPrice = 0;
+
+        soldItems.forEach(item => {
+            // Somme des prix par date
+            if (!dateMap[item.date]) {
+                dateMap[item.date] = 0;
+            }
+            dateMap[item.date] += parseFloat(item.price);
+
+            // Compter les produits
+            if (!productCount[item.name]) {
+                productCount[item.name] = 0;
+            }
+            productCount[item.name]++;
+
+            // Produit le plus vendu
+            if (productCount[item.name] > mostSoldCount) {
+                mostSoldCount = productCount[item.name];
+                mostSoldProduct = item.name;
+            }
+
+            // Produit le plus cher
+            if (parseFloat(item.price) > highestPrice) {
+                highestPrice = parseFloat(item.price);
+                mostExpensiveProduct = item.name;
+            }
+        });
+
+        // Mise à jour des éléments du résumé
+        summaryDates.innerHTML = "Somme des prix par date : <br>" + Object.keys(dateMap).map(date => `${date} : Ar${dateMap[date].toFixed(2)}`).join('<br>');
+        summaryMostSold.textContent = "Produit le plus vendu : " + mostSoldProduct + " (" + mostSoldCount + " fois)";
+        summaryMostExpensive.textContent = "Produit le plus cher : " + mostExpensiveProduct + " (Ar" + highestPrice.toFixed(2) + ")";
+    }
+
+    // Charger les éléments vendus à l'ouverture de la page
+    loadSoldItems();
+</script>
+
+</body>
+</html>
